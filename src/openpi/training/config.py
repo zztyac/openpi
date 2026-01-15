@@ -1,4 +1,17 @@
-"""See _CONFIGS for the list of available configs."""
+"""
+训练配置模块
+
+这个文件定义了所有可用的训练配置。每个配置包含：
+1. 模型配置（架构、维度等）
+2. 数据配置（数据集、数据转换等）
+3. 训练超参数（学习率、批次大小等）
+4. 权重加载器（预训练模型）
+
+使用方法：
+- 查看 _CONFIGS 列表获取所有可用配置
+- 使用 get_config(name) 获取特定配置
+- 使用 cli() 从命令行解析配置
+"""
 
 import abc
 from collections.abc import Sequence
@@ -30,21 +43,20 @@ import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 
 ModelType: TypeAlias = _model.ModelType
-# Work around a tyro issue with using nnx.filterlib.Filter directly.
+# 解决tyro与nnx.filterlib.Filter直接使用的问题
 Filter: TypeAlias = nnx.filterlib.Filter
 
 
 @dataclasses.dataclass(frozen=True)
 class AssetsConfig:
-    """Determines the location of assets (e.g., norm stats) that will be used to set up the data pipeline.
-
-    These assets will be replicated inside the checkpoint under the `assets/asset_id` directory.
-
-    This can be used to load assets from a different checkpoint (e.g., base model checkpoint) or some other
-    centralized location. For example, to load the norm stats for the Trossen robot from the base model checkpoint
-    during fine-tuning, use:
-
-    ```
+    """确定资产（如归一化统计信息）的位置，用于设置数据管道
+    
+    这些资产将被复制到检查点的 `assets/asset_id` 目录下。
+    
+    可用于从不同的检查点（如基础模型检查点）或其他集中位置加载资产。
+    例如，在微调期间从基础模型检查点加载Trossen机器人的归一化统计信息：
+    
+    ```python
     AssetsConfig(
         assets_dir="gs://openpi-assets/checkpoints/pi0_base/assets",
         asset_id="trossen",
@@ -52,49 +64,49 @@ class AssetsConfig:
     ```
     """
 
-    # Assets directory. If not provided, the config assets_dirs will be used. This is useful to load assets from
-    # a different checkpoint (e.g., base model checkpoint) or some other centralized location.
+    # 资产目录。如果未提供，将使用配置的assets_dirs。
+    # 用于从不同检查点或集中位置加载资产
     assets_dir: str | None = None
 
-    # Asset id. If not provided, the repo id will be used. This allows users to reference assets that describe
-    # different robot platforms.
+    # 资产ID。如果未提供，将使用repo_id。
+    # 允许用户引用描述不同机器人平台的资产
     asset_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
 class DataConfig:
-    # LeRobot repo id. If None, fake data will be created.
+    """数据配置：定义数据集和数据处理管道"""
+    
+    # LeRobot仓库ID。如果为None，将创建假数据
     repo_id: str | None = None
-    # Directory within the assets directory containing the data assets.
+    # 资产目录中包含数据资产的目录
     asset_id: str | None = None
-    # Contains precomputed normalization stats. If None, normalization will not be performed.
+    # 包含预计算的归一化统计信息。如果为None，将不执行归一化
     norm_stats: dict[str, _transforms.NormStats] | None = None
 
-    # Used to adopt the inputs from a dataset specific format to a common format
-    # which is expected by the data transforms.
+    # 用于将数据集特定格式转换为数据转换期望的通用格式
     repack_transforms: _transforms.Group = dataclasses.field(default_factory=_transforms.Group)
-    # Data transforms, typically include robot specific transformations. Will be applied
-    # before the data is normalized. See `model.Observation` and `model.Actions` to learn about the
-    # normalized data.
+    # 数据转换，通常包括机器人特定的转换。将在数据归一化之前应用
+    # 参见 `model.Observation` 和 `model.Actions` 了解归一化数据
     data_transforms: _transforms.Group = dataclasses.field(default_factory=_transforms.Group)
-    # Model specific transforms. Will be applied after the data is normalized.
+    # 模型特定转换。将在数据归一化之后应用
     model_transforms: _transforms.Group = dataclasses.field(default_factory=_transforms.Group)
-    # If true, will use quantile normalization. Otherwise, normal z-score normalization will be used.
+    # 如果为true，将使用分位数归一化。否则，将使用正常的z-score归一化
     use_quantile_norm: bool = False
 
-    # Names of keys that will be used by the data loader to generate the action sequence. The length of the
-    # sequence is defined by the `action_horizon` field in the model config. This should be adjusted if your
-    # LeRobot dataset is using different keys to represent the action.
+    # 数据加载器将使用的键名，用于生成动作序列
+    # 序列长度由模型配置中的 `action_horizon` 字段定义
+    # 如果LeRobot数据集使用不同的键表示动作，应调整此项
     action_sequence_keys: Sequence[str] = ("actions",)
 
-    # If true, will use the LeRobot dataset task to define the prompt.
+    # 如果为true，将使用LeRobot数据集任务定义提示
     prompt_from_task: bool = False
 
-    # Only used for RLDS data loader (ie currently only used for DROID).
+    # 仅用于RLDS数据加载器（目前仅用于DROID）
     rlds_data_dir: str | None = None
-    # Action space for DROID dataset.
+    # DROID数据集的动作空间
     action_space: droid_rlds_dataset.DroidActionSpace | None = None
-    # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
+    # 要采样的数据集列表：名称、版本、权重，以及可选的filter_dict_path
     datasets: Sequence[droid_rlds_dataset.RLDSDataset] = ()
 
 
@@ -464,91 +476,104 @@ class LeRobotDROIDDataConfig(DataConfigFactory):
 
 @dataclasses.dataclass(frozen=True)
 class TrainConfig:
-    # Name of the config. Must be unique. Will be used to reference this config.
+    """训练配置：定义完整的训练设置
+    
+    这是核心配置类，包含训练所需的所有设置：
+    - 模型架构和参数
+    - 数据集和数据处理
+    - 优化器和学习率调度
+    - 训练超参数（批次大小、步数等）
+    - 检查点和日志设置
+    """
+    
+    # 配置名称。必须唯一。将用于引用此配置
     name: tyro.conf.Suppress[str]
-    # Project name.
+    # 项目名称（用于wandb）
     project_name: str = "openpi"
-    # Experiment name. Will be used to name the metadata and checkpoint directories.
+    # 实验名称。将用于命名元数据和检查点目录
     exp_name: str = tyro.MISSING
 
-    # Defines the model config. Some attributes (action_dim, action_horizon, and max_token_len) are shared by all models
-    # -- see BaseModelConfig. Specific model implementations (e.g., Pi0Config) inherit from BaseModelConfig and may
-    # define additional attributes.
+    # 定义模型配置。某些属性（action_dim、action_horizon和max_token_len）
+    # 由所有模型共享 -- 参见BaseModelConfig。
+    # 特定模型实现（如Pi0Config）继承自BaseModelConfig，可能定义额外属性
     model: _model.BaseModelConfig = dataclasses.field(default_factory=pi0_config.Pi0Config)
 
-    # A weight loader can optionally load (possibly partial) weights from disk after the model is initialized.
+    # 权重加载器可以在模型初始化后从磁盘加载（可能是部分）权重
     weight_loader: weight_loaders.WeightLoader = dataclasses.field(default_factory=weight_loaders.NoOpWeightLoader)
 
-    # Optional path to a PyTorch checkpoint to load weights from.
+    # 可选的PyTorch检查点路径，用于加载权重
     pytorch_weight_path: str | None = None
 
-    # Precision for PyTorch training.
+    # PyTorch训练精度
     pytorch_training_precision: Literal["bfloat16", "float32"] = "bfloat16"
 
+    # 学习率调度配置
     lr_schedule: _optimizer.LRScheduleConfig = dataclasses.field(default_factory=_optimizer.CosineDecaySchedule)
+    # 优化器配置
     optimizer: _optimizer.OptimizerConfig = dataclasses.field(default_factory=_optimizer.AdamW)
+    # EMA（指数移动平均）衰减率。如果为None，则禁用EMA
     ema_decay: float | None = 0.99
 
-    # Specifies which weights should be frozen.
+    # 指定哪些权重应该被冻结（用于LoRA微调等）
     freeze_filter: tyro.conf.Suppress[Filter] = dataclasses.field(default_factory=nnx.Nothing)
 
-    # Determines the data to be trained on.
+    # 确定要训练的数据
     data: DataConfigFactory = dataclasses.field(default_factory=FakeDataConfig)
 
-    # Base directory for config assets (e.g., norm stats).
+    # 配置资产的基础目录（如归一化统计信息）
     assets_base_dir: str = "./assets"
-    # Base directory for checkpoints.
+    # 检查点的基础目录
     checkpoint_base_dir: str = "./checkpoints"
 
-    # Random seed that will be used by random generators during training.
+    # 训练期间随机生成器使用的随机种子
     seed: int = 42
-    # Global batch size.
+    # 全局批次大小
     batch_size: int = 32
-    # Number of workers to use for the data loader. Increasing this number will speed up data loading but
-    # will increase memory and CPU usage.
+    # 数据加载器使用的工作进程数。增加此数字将加快数据加载，
+    # 但会增加内存和CPU使用
     num_workers: int = 2
-    # Number of train steps (batches) to run.
+    # 要运行的训练步数（批次）
     num_train_steps: int = 30_000
 
-    # How often (in steps) to log training metrics.
+    # 记录训练指标的频率（步数）
     log_interval: int = 100
-    # How often (in steps) to save checkpoints.
+    # 保存检查点的频率（步数）
     save_interval: int = 1000
-    # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
+    # 如果设置，任何满足 step % keep_period == 0 的现有检查点将不会被删除
     keep_period: int | None = 5000
 
-    # If true, will overwrite the checkpoint directory if it already exists.
+    # 如果为true，如果检查点目录已存在，将覆盖它
     overwrite: bool = False
-    # If true, will resume training from the last checkpoint.
+    # 如果为true，将从最后一个检查点恢复训练
     resume: bool = False
 
-    # If true, will enable wandb logging.
+    # 如果为true，将启用wandb日志记录
     wandb_enabled: bool = True
 
-    # Used to pass metadata to the policy server.
+    # 用于将元数据传递给策略服务器
     policy_metadata: dict[str, Any] | None = None
 
-    # If the value is greater than 1, FSDP will be enabled and shard across number of specified devices; overall
-    # device memory will be reduced but training could potentially be slower.
-    # eg. if total device is 4 and fsdp devices is 2; then the model will shard to 2 devices and run
-    # data parallel between 2 groups of devices.
+    # 如果值大于1，将启用FSDP并在指定数量的设备上分片；
+    # 总体设备内存将减少，但训练可能会变慢。
+    # 例如，如果总设备数为4，fsdp设备数为2；则模型将分片到2个设备，
+    # 并在2组设备之间运行数据并行
     fsdp_devices: int = 1
 
     @property
     def assets_dirs(self) -> pathlib.Path:
-        """Get the assets directory for this config."""
+        """获取此配置的资产目录"""
         return (pathlib.Path(self.assets_base_dir) / self.name).resolve()
 
     @property
     def checkpoint_dir(self) -> pathlib.Path:
-        """Get the checkpoint directory for this config."""
+        """获取此配置的检查点目录"""
         if not self.exp_name:
             raise ValueError("--exp_name must be set")
         return (pathlib.Path(self.checkpoint_base_dir) / self.name / self.exp_name).resolve()
 
     @property
     def trainable_filter(self) -> nnx.filterlib.Filter:
-        """Get the filter for the trainable parameters."""
+        """获取可训练参数的过滤器"""
         return nnx.All(nnx.Param, nnx.Not(self.freeze_filter))
 
     def __post_init__(self) -> None:
@@ -556,10 +581,11 @@ class TrainConfig:
             raise ValueError("Cannot resume and overwrite at the same time.")
 
 
-# Use `get_config` if you need to get a config by name in your code.
+# 使用 `get_config` 在代码中按名称获取配置
 _CONFIGS = [
     #
-    # Inference Aloha configs.
+    # ALOHA推理配置
+    # 这些配置用于在ALOHA机器人上运行推理
     #
     TrainConfig(
         name="pi0_aloha",
@@ -582,7 +608,7 @@ _CONFIGS = [
         model=pi0_config.Pi0Config(),
         data=LeRobotAlohaDataConfig(
             assets=AssetsConfig(asset_id="trossen"),
-            default_prompt="fold the towel",
+            default_prompt="fold the towel",  # 默认任务：折叠毛巾
         ),
         policy_metadata={"reset_pose": [0, -1.5, 1.5, 0, 0, 0]},
     ),
@@ -591,12 +617,13 @@ _CONFIGS = [
         model=pi0_config.Pi0Config(),
         data=LeRobotAlohaDataConfig(
             assets=AssetsConfig(asset_id="trossen"),
-            default_prompt="open the tupperware and put the food on the plate",
+            default_prompt="open the tupperware and put the food on the plate",  # 默认任务：打开保鲜盒并将食物放在盘子上
         ),
         policy_metadata={"reset_pose": [0, -1.5, 1.5, 0, 0, 0]},
     ),
     #
-    # Inference DROID configs.
+    # DROID推理配置
+    # 这些配置用于在DROID机器人上运行推理
     #
     TrainConfig(
         name="pi0_droid",
@@ -608,7 +635,7 @@ _CONFIGS = [
                 outputs=[droid_policy.DroidOutputs()],
             ),
             base_config=DataConfig(
-                prompt_from_task=True,
+                prompt_from_task=True,  # 从任务字段加载提示
             ),
         ),
     ),
@@ -641,19 +668,18 @@ _CONFIGS = [
         ),
     ),
     #
-    # Fine-tuning Libero configs.
+    # LIBERO微调配置
+    # 这些训练配置定义了在自己的数据集上微调基础模型的超参数
+    # 它们用于定义关键元素，如训练的数据集、使用的基础检查点，
+    # 以及其他超参数，如运行多少训练步数或使用什么学习率
+    # 对于自己的数据集，可以复制此类并根据下面的注释修改数据集名称和数据转换
     #
-    # These train configs define the hyperparameters for fine-tuning the base model on your own dataset.
-    # They are used to define key elements like the dataset you are training on, the base checkpoint you
-    # are using, and other hyperparameters like how many training steps to run or what learning rate to use.
-    # For your own dataset, you can copy this class and modify the dataset name, and data transforms based on
-    # the comments below.
     TrainConfig(
-        # Change the name to reflect your model and dataset.
+        # 更改名称以反映您的模型和数据集
         name="pi0_libero",
-        # Here you define the model config -- In this example we use pi0 as the model
-        # architecture and perform *full* finetuning. in the examples below we show how to modify
-        # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
+        # 这里定义模型配置 -- 在此示例中，我们使用pi0作为模型架构
+        # 并执行*完全*微调。在下面的示例中，我们展示如何修改此项
+        # 以执行*低内存*（LORA）微调并使用pi0-FAST作为替代架构
         model=pi0_config.Pi0Config(),
         # Here you define the dataset you are training on. In this example we use the Libero
         # dataset. For your own dataset, you can change the repo_id to point to your dataset.
@@ -965,23 +991,46 @@ _CONFIGS = [
         exp_name="debug_pi05",
         wandb_enabled=False,
     ),
-    # RoboArena & PolaRiS configs.
+    # RoboArena & PolaRiS配置
     *roboarena_config.get_roboarena_configs(),
     *polaris_config.get_polaris_configs(),
 ]
 
+# 验证配置名称的唯一性
 if len({config.name for config in _CONFIGS}) != len(_CONFIGS):
     raise ValueError("Config names must be unique.")
+# 创建配置字典以便快速查找
 _CONFIGS_DICT = {config.name: config for config in _CONFIGS}
 
 
 def cli() -> TrainConfig:
+    """从命令行解析训练配置
+    
+    使用tyro库解析命令行参数，支持：
+    - 选择预定义的配置
+    - 覆盖配置中的任何字段
+    
+    示例：
+        python train.py pi0_libero --exp_name my_experiment
+        python train.py pi0_libero --batch_size 64 --num_train_steps 50000
+    """
     return tyro.extras.overridable_config_cli({k: (k, v) for k, v in _CONFIGS_DICT.items()})
 
 
 def get_config(config_name: str) -> TrainConfig:
-    """Get a config by name."""
+    """按名称获取配置
+    
+    Args:
+        config_name: 配置名称（如"pi0_libero"）
+        
+    Returns:
+        对应的TrainConfig对象
+        
+    Raises:
+        ValueError: 如果配置名称不存在，会提示最接近的匹配
+    """
     if config_name not in _CONFIGS_DICT:
+        # 使用difflib查找最接近的匹配，提供有用的错误消息
         closest = difflib.get_close_matches(config_name, _CONFIGS_DICT.keys(), n=1, cutoff=0.0)
         closest_str = f" Did you mean '{closest[0]}'? " if closest else ""
         raise ValueError(f"Config '{config_name}' not found.{closest_str}")

@@ -26,7 +26,7 @@ dependencies = [
     "orbax-checkpoint==0.11.13",
     "pillow>=11.0.0",
     "sentencepiece>=0.2.0",
-    "torch==2.7.1",
+    "torch",
     "tqdm-loggable>=0.2",
     "typing-extensions>=4.12.2",
     "tyro>=0.9.5",
@@ -60,7 +60,16 @@ rlds = [
 ]
 
 [tool.uv]
-override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74"]
+override-dependencies = [
+    "ml-dtypes==0.4.1",
+    "tensorstore==0.1.74",
+    # Use PyTorch 2.4 for manylinux_2_17 compatibility (2.5+ requires manylinux_2_28)
+    "torch==2.4.1",
+    "torchvision==0.19.1",  # Compatible with torch 2.4.1
+    # Skip packages without manylinux_2_17 wheels (optional lerobot dependencies)
+    "rerun-sdk ; python_version < '0'",  # Visualization tool
+    "torchcodec ; python_version < '0'",  # Video codec tool
+]
 
 [tool.uv.sources]
 openpi-client = { workspace = true }
